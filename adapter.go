@@ -108,7 +108,7 @@ func (a *Adapter) LoadPolicy(model model.Model) error {
 
 	bucket, err := a.getBucket(ctx, a.bucketName, true, 0)
 	if err != nil {
-		return errors.Wrap(err, "unable to get bucket")
+		return errors.Wrapf(err, "unable to get bucket '%s'", a.bucketName)
 	}
 
 	keys, err := bucket.Keys()
@@ -141,7 +141,7 @@ func (a *Adapter) AddPolicy(sec string, ptype string, line []string) error {
 
 	bucket, err := a.getBucket(ctx, a.bucketName, true, 0)
 	if err != nil {
-		return errors.Wrap(err, "unable to get bucket")
+		return errors.Wrapf(err, "unable to get bucket '%s'", a.bucketName)
 	}
 
 	ruleData, err := json.Marshal(rule)
@@ -150,7 +150,7 @@ func (a *Adapter) AddPolicy(sec string, ptype string, line []string) error {
 	}
 
 	if _, err := bucket.Put(rule.Key, ruleData); err != nil {
-		return errors.Wrap(err, "unable to put policy into bucket")
+		return errors.Wrapf(err, "unable to put policy into bucket key '%s'", rule.Key)
 	}
 
 	return nil
@@ -165,7 +165,7 @@ func (a *Adapter) RemovePolicy(sec string, ptype string, line []string) error {
 
 	bucket, err := a.getBucket(ctx, a.bucketName, true, 0)
 	if err != nil {
-		return errors.Wrap(err, "unable to get bucket")
+		return errors.Wrapf(err, "unable to get bucket '%s'", a.bucketName)
 	}
 
 	if err := bucket.Delete(rule.Key); err != nil {
@@ -232,7 +232,7 @@ func (a *Adapter) convertRule(ptype string, line []string) (rule CasbinRule) {
 		policys = append(policys, Placeholder)
 	}
 
-	rule.Key = strings.Join(policys, "::")
+	rule.Key = strings.Join(policys, "--")
 
 	return rule
 }
@@ -265,36 +265,27 @@ func (a *Adapter) destroy() error {
 }
 
 func (a *Adapter) getBucket(_ context.Context, bucket string, create bool, ttl time.Duration) (nats.KeyValue, error) {
-	// NOTE: Context usage for K/V operations is not available in NATS (yet)
-
-	// Nope - try to get it from NATS
 	kv, err := a.jsCtx.KeyValue(bucket)
 	if err != nil {
-		// Is this a fatal error?
 		if err != nats.ErrBucketNotFound {
 			return nil, errors.Wrap(err, "key value fetch error in getBucket()")
+		} else if create {
+			kv, err = a.jsCtx.CreateKeyValue(&nats.KeyValueConfig{
+				Bucket:      bucket,
+				Description: "auto-created bucket via casbin-nats-kv-adapter",
+				History:     5,
+				TTL:         ttl,
+			})
+
+			if err != nil {
+				return nil, errors.Wrap(err, "bucket create error in getBucket()")
+			}
+
+			return kv, nil
 		}
 	}
 
-	// Bucket was not found and we want to create
-	if kv == nil && create {
-		kv, err = a.jsCtx.CreateKeyValue(&nats.KeyValueConfig{
-			Bucket:      bucket,
-			Description: "auto-created bucket via casbin-nats-kv-adapter",
-			History:     5,
-			TTL:         ttl,
-		})
-
-		if err != nil {
-			return nil, errors.Wrap(err, "bucket create error in getBucket()")
-		}
-
-		return kv, nil
-	}
-
-	// If we got here, we ran into a ErrBucketNotFound and we don't want to
-	// create a new bucket.
-	return nil, nats.ErrBucketNotFound
+	return kv, nil
 }
 
 func (a *Adapter) connect() error {
@@ -340,6 +331,11 @@ func (a *Adapter) connect() error {
 
 	a.jsCtx = js
 
+	// Create bucket if it doesn't exist
+	if _, err := a.getBucket(context.Background(), a.bucketName, true, 0); err != nil {
+		return errors.Wrap(err, "failed to create bucket")
+	}
+
 	return nil
 }
 
@@ -382,39 +378,39 @@ func (a *Adapter) constructFilter(rule CasbinRule) string {
 	}
 
 	if rule.V0 != "" {
-		filter = fmt.Sprintf("%s::%s", filter, rule.V0)
+		filter = fmt.Sprintf("%s--%s", filter, rule.V0)
 	} else {
-		filter = fmt.Sprintf("%s::.*", filter)
+		filter = fmt.Sprintf("%s--.*", filter)
 	}
 
 	if rule.V1 != "" {
-		filter = fmt.Sprintf("%s::%s", filter, rule.V1)
+		filter = fmt.Sprintf("%s--%s", filter, rule.V1)
 	} else {
-		filter = fmt.Sprintf("%s::.*", filter)
+		filter = fmt.Sprintf("%s--.*", filter)
 	}
 
 	if rule.V2 != "" {
-		filter = fmt.Sprintf("%s::%s", filter, rule.V2)
+		filter = fmt.Sprintf("%s--%s", filter, rule.V2)
 	} else {
-		filter = fmt.Sprintf("%s::.*", filter)
+		filter = fmt.Sprintf("%s--.*", filter)
 	}
 
 	if rule.V3 != "" {
-		filter = fmt.Sprintf("%s::%s", filter, rule.V3)
+		filter = fmt.Sprintf("%s--%s", filter, rule.V3)
 	} else {
-		filter = fmt.Sprintf("%s::.*", filter)
+		filter = fmt.Sprintf("%s--.*", filter)
 	}
 
 	if rule.V4 != "" {
-		filter = fmt.Sprintf("%s::%s", filter, rule.V4)
+		filter = fmt.Sprintf("%s--%s", filter, rule.V4)
 	} else {
-		filter = fmt.Sprintf("%s::.*", filter)
+		filter = fmt.Sprintf("%s--.*", filter)
 	}
 
 	if rule.V5 != "" {
-		filter = fmt.Sprintf("%s::%s", filter, rule.V5)
+		filter = fmt.Sprintf("%s--%s", filter, rule.V5)
 	} else {
-		filter = fmt.Sprintf("%s::.*", filter)
+		filter = fmt.Sprintf("%s--.*", filter)
 	}
 
 	return filter
