@@ -100,7 +100,7 @@ func (a *Adapter) loadPolicy(rule CasbinRule, model model.Model) {
 	persist.LoadPolicyLine(lineText, model)
 }
 
-// LoadPolicy loads all of policys from ETCD
+// LoadPolicy loads all of policies from nats
 func (a *Adapter) LoadPolicy(model model.Model) error {
 	var rule CasbinRule
 	ctx, cancel := context.WithTimeout(context.Background(), RequestTimeout)
@@ -233,6 +233,7 @@ func (a *Adapter) convertRule(ptype string, line []string) (rule CasbinRule) {
 	}
 
 	rule.Key = strings.Join(policys, "--")
+	rule.Key = strings.ReplaceAll(rule.Key, " ", "_")
 
 	return rule
 }
